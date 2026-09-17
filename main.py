@@ -1,9 +1,26 @@
 from datetime import datetime, timezone
+from itertools import product
+from typing import Optional
+from wsgiref import validate
 import requests
 import os
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import time
+from pydantic import BaseModel, ValidationError
+from typing import Optional
+import json
+
+class BookRecord(BaseModel):
+    title: str
+    product_url: str
+    price_text: str
+    availability_text: str
+    rating_text: str
+    price_gbp: float
+    description: Optional[str] = None
+    source_page: str
+    fetched_at: str
 
 HEADERS = {"User-Agent": "FlyRankInternship-A9/1.0 (+https://github.com/LlokieHere/polite-scraper)"}
 
@@ -81,6 +98,7 @@ def extract_book_record(book_url, source_page):
 
     title = soup.find("h1").text
     price_text = soup.find("p", class_="price_color").text
+    price_gbp = float(price_text.replace("£", ""))
     availability_text = soup.find("p", class_="instock availability").text.strip()
     rating_tag = soup.find("p", class_="star-rating")
     rating_text = rating_tag["class"][1]
@@ -95,6 +113,7 @@ def extract_book_record(book_url, source_page):
         "title": title,
         "product_url": book_url,
         "price_text": price_text,
+        "price_gbp": price_gbp,
         "availability_text": availability_text,
         "rating_text": rating_text,
         "description": description,
@@ -103,6 +122,7 @@ def extract_book_record(book_url, source_page):
     }
 
     return record
+
 
 
 # --- Stage 2: discover all book URLs across 3 catalogue pages ---
@@ -137,7 +157,27 @@ for book_url, source_page in unique_books:
     time.sleep(0.5)
 
 print(f"detail_pages={len(all_records)}")
-print(all_records[0])
 
-none_count = sum(1 for r in all_records if r["description"] is None)
-print(f"records with no description: {none_count}")
+valid_records = []
+invalid_records = []
+
+for record in all_records:
+    try: 
+        validated = BookRecord(**record)
+        valid_records.append(validated.model_dump())
+    except ValidationError as e:
+        invalid_records.append({"record": record, "error": str(e)})
+
+print(f"valid: {len(valid_records)}")
+print(f"invalid: {len(invalid_records)}")
+
+os.makedirs("output", exist_ok=True)
+
+with open("output/books.json", "w", encoding="utf-8") as f:
+    json.dump(valid_records, f, indent=2, ensure_ascii=False)
+
+with open("output/errors.json", "w", encoding="utf-8") as f:
+    json.dump(invalid_records, f, indent=2, ensure_ascii=False)
+
+print(f"Wrote {len(valid_records)} records to output/books.json")
+print(f"Wrote {len(invalid_records)} records to output/errors.json")
