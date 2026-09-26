@@ -77,6 +77,7 @@ def extract_book_record(book_url, source_page):
         with open(cache_filename, "r", encoding="utf-8") as f:
             html = f.read()
     else:
+        
         print("FETCH")
         try:
             response = requests.get(book_url, headers=HEADERS, timeout=10)
@@ -124,7 +125,7 @@ def extract_book_record(book_url, source_page):
     return record
 
 
-
+run_start = datetime.now(timezone.utc)
 # --- Stage 2: discover all book URLs across 3 catalogue pages ---
 all_books = []
 current_url = "https://books.toscrape.com/catalogue/page-1.html"
@@ -148,13 +149,22 @@ print(f"discovered={len(all_books)}")
 unique_books = list(set(all_books))
 print(f"unique_urls={len(unique_books)}")
 
-
+unique_books.append(("https://books.toscrape.com/catalogue/this-book-does-not-exist_9999/index.html", "https://books.toscrape.com/catalogue/page-1.html"))
+print(f"unique_urls={len(unique_books)}")  # should now show 61
 # --- Stage 3: extract full record for every unique book ---
 all_records = []
+failed_pages = []
+
 for book_url, source_page in unique_books:
-    record = extract_book_record(book_url, source_page)
-    all_records.append(record)
+    try:
+        record = extract_book_record(book_url, source_page)
+        all_records.append(record)
+    except Exception as e:
+        print(f"FAILED: {book_url} - {e}")
+        failed_pages.append({"url": book_url, "error": str(e)})
     time.sleep(0.5)
+
+print(f"failed_pages={len(failed_pages)}")
 
 print(f"detail_pages={len(all_records)}")
 
@@ -181,3 +191,21 @@ with open("output/errors.json", "w", encoding="utf-8") as f:
 
 print(f"Wrote {len(valid_records)} records to output/books.json")
 print(f"Wrote {len(invalid_records)} records to output/errors.json")
+
+
+run_end = datetime.now(timezone.utc)
+
+run_report = {
+    "start_time": run_start.isoformat(),
+    "end_time": run_end.isoformat(),
+    "duration_seconds": (run_end - run_start).total_seconds(),
+    "pages_fetched": page_number - 1,
+    "valid_records": len(valid_records),
+    "invalid_records": len(invalid_records),
+    "failed_pages": len(failed_pages),
+}
+
+with open("output/run-report.json", "w", encoding="utf-8") as f:
+    json.dump(run_report, f, indent=2, ensure_ascii=False)
+
+print(f"Wrote run report to output/run-report.json")
